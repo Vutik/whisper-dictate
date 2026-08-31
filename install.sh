@@ -8,7 +8,7 @@
 # Idempotent: safe to re-run to upgrade or repair an existing install.
 set -euo pipefail
 
-REPO="${WHISPER_DICTATE_REPO:-}"
+REPO="${WHISPER_DICTATE_REPO:-https://github.com/Vutik/whisper-dictate.git}"
 BRANCH="${WHISPER_DICTATE_BRANCH:-main}"
 HOTKEY="${HOTKEY:-ctrl+alt+space}"
 MODEL="${MODEL:-large-v3-turbo}"

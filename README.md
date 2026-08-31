@@ -13,16 +13,17 @@ cursor was. Nothing leaves the machine.
 ### One command
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/USER/whisper-dictate/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Vutik/whisper-dictate/main/install.sh | bash
 ```
 
-> Substitute your own repository. A piped install needs to know where to fetch
-> the sources from: `WHISPER_DICTATE_REPO=https://…/whisper-dictate.git`.
+That is all — the script fetches the sources, installs everything and starts
+the service. Point it elsewhere with `WHISPER_DICTATE_REPO` and
+`WHISPER_DICTATE_BRANCH` if you are working from a fork.
 
 ### From a checkout
 
 ```bash
-git clone https://github.com/USER/whisper-dictate.git
+git clone https://github.com/Vutik/whisper-dictate.git
 cd whisper-dictate
 ./install.sh
 ```
