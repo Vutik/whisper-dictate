@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+"""Client for the whisper-dictate daemon.
+
+Dependency-free and import-light so a hotkey press costs ~30 ms.
+
+  dictate                      toggle recording
+  dictate start|stop|cancel
+  dictate status|backends|ping
+  dictate get [key]            show configuration
+  dictate set <key> <value>    change it — the daemon picks it up by itself
+  dictate reload               force a re-read of the config file
+  dictate edit                 open the config in $EDITOR
+"""
+import json
+import os
+import re
+import socket
+import subprocess
+import sys
+
+APP = "whisper-dictate"
+RUNTIME = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+SOCKET = os.path.join(RUNTIME, f"{APP}.sock")
+CONFIG = os.path.join(os.environ.get("XDG_CONFIG_HOME",
+                                     os.path.expanduser("~/.config")),
+                      APP, "config.json")
+
+
+# Schemas that hold desktop-wide shortcuts. Grabbing a combination that is
+# already one of these still "works" — the grab succeeds — but the desktop
+# acts on it too, so Ctrl+Alt+D would both dictate and hide every window.
+GNOME_SCHEMAS = (
+    "org.gnome.desktop.wm.keybindings",
+    "org.gnome.settings-daemon.plugins.media-keys",
+    "org.gnome.shell.keybindings",
+    "org.gnome.mutter.keybindings",
+)
+
+MOD_ALIASES = {
+    "primary": "ctrl", "control": "ctrl", "ctrl": "ctrl",
+    "alt": "alt", "mod1": "alt",
+    "shift": "shift",
+    "super": "super", "win": "super", "mod4": "super",
+}
+
+
+def _canon(spec: str):
+    """('ctrl+alt+d') and ('<Primary><Alt>d') both become (frozenset, 'd')."""
+    spec = spec.strip()
+    mods, key = set(), spec
+    if "<" in spec:
+        import re as _re
+        mods = {MOD_ALIASES.get(m.lower(), m.lower())
+                for m in _re.findall(r"<([^>]+)>", spec)}
+        key = _re.sub(r"<[^>]+>", "", spec)
+    else:
+        parts = [p for p in spec.split("+") if p]
+        if len(parts) > 1:
+            mods = {MOD_ALIASES.get(p.lower(), p.lower()) for p in parts[:-1]}
+            key = parts[-1]
+    return frozenset(mods), key.strip().lower()
+
+
+def hotkey_conflicts(spec: str):
+    """Desktop shortcuts that already use this combination."""
+    want = _canon(spec)
+    if not want[1]:
+        return []
+    found = []
+    for schema in GNOME_SCHEMAS:
+        try:
+            keys = subprocess.run(["gsettings", "list-keys", schema],
+                                  capture_output=True, text=True,
+                                  timeout=5).stdout.split()
+        except Exception:
+            continue
+        for key in keys:
+            try:
+                raw = subprocess.run(["gsettings", "get", schema, key],
+                                     capture_output=True, text=True,
+                                     timeout=5).stdout.strip()
+            except Exception:
+                continue
+            if "<" not in raw:
+                continue
+            for binding in re.findall(r"'([^']*)'", raw):
+                if _canon(binding) == want:
+                    found.append(f"{schema.split('.')[-1]}.{key}")
+    return sorted(set(found))
+
+
+def send(cmd: str, quiet: bool = False) -> str:
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(15)
+    try:
+        s.connect(SOCKET)
+    except OSError:
+        if not quiet:
+            subprocess.run(["notify-send", "-a", "Dictate", "-u", "critical",
+                            "⚠️ Демон диктовки не запущен",
+                            "systemctl --user start whisper-dictate"],
+                           check=False)
+            print(f"cannot reach daemon at {SOCKET}", file=sys.stderr)
+        raise SystemExit(1)
+    s.sendall((cmd + "\n").encode())
+    try:
+        return s.recv(65536).decode().strip()
+    except socket.timeout:
+        print("timeout", file=sys.stderr)
+        raise SystemExit(1)
+
+
+def load_config() -> dict:
+    with open(CONFIG) as fh:
+        return json.load(fh)
+
+
+def walk(cfg: dict, path: str):
+    """Resolve a dotted key like backends.stt."""
+    node, parts = cfg, path.split(".")
+    for part in parts[:-1]:
+        node = node.setdefault(part, {})
+        if not isinstance(node, dict):
+            raise SystemExit(f"{path}: {part} is not a section")
+    return node, parts[-1]
+
+
+def main() -> int:
+    args = sys.argv[1:]
+    cmd = args[0] if args else "toggle"
+
+    if cmd == "get":
+        cfg = load_config()
+        if len(args) > 1:
+            node, leaf = walk(cfg, args[1])
+            if leaf not in node:
+                raise SystemExit(f"no such key: {args[1]}")
+            print(json.dumps(node[leaf], ensure_ascii=False, indent=2))
+        else:
+            print(json.dumps(cfg, ensure_ascii=False, indent=2))
+        return 0
+
+    if cmd == "set":
+        if len(args) < 3:
+            raise SystemExit("usage: dictate set <key> <value>")
+        key, raw = args[1], " ".join(a for a in args[2:] if a != "--force")
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError:
+            value = raw                      # bare strings need no quoting
+        cfg = load_config()
+        node, leaf = walk(cfg, key)
+        if leaf not in node and "." not in key:
+            raise SystemExit(f"no such key: {key} (see: dictate get)")
+        before = node.get(leaf)
+
+        if key == "hotkey" and isinstance(value, str):
+            clashes = hotkey_conflicts(value)
+            if clashes:
+                print(f"⚠️  {value} уже занята рабочим столом: "
+                      f"{', '.join(clashes)}", file=sys.stderr)
+                print("   Комбинация сработает и там, и здесь одновременно.",
+                      file=sys.stderr)
+                if "--force" not in args:
+                    print("   Отменено. Повторите с --force, если так и надо.",
+                          file=sys.stderr)
+                    return 1
+
+        node[leaf] = value
+        with open(CONFIG, "w") as fh:
+            json.dump(cfg, fh, ensure_ascii=False, indent=2)
+            fh.write("\n")
+        print(f"{key}: {before!r} → {value!r}")
+        try:
+            print(send("reload", quiet=True))
+        except SystemExit:
+            print("(демон не запущен — применится при старте)")
+        return 0
+
+    if cmd == "edit":
+        editor = os.environ.get("EDITOR", "nano")
+        subprocess.run([editor, CONFIG])
+        try:
+            print(send("reload", quiet=True))
+        except SystemExit:
+            pass
+        return 0
+
+    print(send(cmd))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

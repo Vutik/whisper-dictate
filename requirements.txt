@@ -1,0 +1,14 @@
+# core
+faster-whisper
+sounddevice
+numpy
+
+# CUDA runtime for ctranslate2 (harmless on machines without an NVIDIA GPU)
+nvidia-cublas-cu12
+nvidia-cudnn-cu12>=9,<10
+
+# X11 hotkey grab
+python-xlib
+
+# Wayland / console hotkey via /dev/input
+evdev
