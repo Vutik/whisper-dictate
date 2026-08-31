@@ -302,6 +302,30 @@ skipped with a log line rather than taking the daemon down.
 
 ---
 
+## Tests
+
+```bash
+pip install numpy pytest
+pytest
+```
+
+85 tests, ~9 seconds. They need **no GPU, microphone, display server or
+network**: the interfaces let fakes stand in for every platform backend, so
+the state machine is exercised directly.
+
+| File | Covers |
+|---|---|
+| `test_core.py` | the dictation state machine: full cycle, toggle, cancel, races, and every failure path |
+| `test_lifecycle.py` | model load / park / drop, and that an active recording is never unloaded |
+| `test_registry.py` | priority ordering, `is_available` filtering, explicit pinning, error messages |
+| `test_config.py` | defaults, merging, per-key `backends` merge, corrupt files |
+| `test_postprocess.py` | term restoration, whole-word matching, hallucination filtering |
+| `test_remote_stt.py` | WAV encoding, multipart shape and error handling, against a throwaway HTTP server |
+| `test_injectors.py` | paste-vs-type routing and terminal detection, with subprocess replaced |
+| `test_hotkey_spec.py` | hotkey parsing and its error reporting |
+
+CI runs them on Python 3.9–3.13 (`.github/workflows/tests.yml`).
+
 ## Troubleshooting
 
 ```bash
