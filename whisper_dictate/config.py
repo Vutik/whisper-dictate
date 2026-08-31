@@ -36,6 +36,13 @@ DEFAULTS = {
     "initial_prompt": None,
     "no_speech_threshold": 0.9,
 
+    # Remote recogniser (backends.stt = "openai-api"). Works with any service
+    # that copies the OpenAI /audio/transcriptions shape.
+    "remote_base_url": "https://api.groq.com/openai/v1",
+    "remote_model": "whisper-large-v3-turbo",
+    "remote_api_key_env": "GROQ_API_KEY",
+    "remote_timeout": 30,
+
     # Idle handling: park the weights outside VRAM (0.25 s to come back), then
     # drop them from RAM after a longer idle. 0 disables either stage.
     "idle_unload_seconds": 30,

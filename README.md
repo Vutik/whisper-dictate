@@ -106,6 +106,33 @@ File: `~/.config/whisper-dictate/config.json`.
 | `initial_prompt` | `null` | free-form hint for the decoder |
 | `no_speech_threshold` | `0.9` | drop segments this likely to be silence |
 
+### Remote recognition (optional)
+
+A second recogniser talks to any service that copies the OpenAI
+`/audio/transcriptions` API — Groq's free tier, OpenAI, Mistral, or a
+self-hosted `whisper-server`. It holds no VRAM and runs on any hardware, at the
+cost of sending audio off the machine and paying network latency.
+
+```bash
+export GROQ_API_KEY=...              # put this in ~/.profile to persist
+./dictate set backends.stt openai-api
+```
+
+| Key | Default | Notes |
+|---|---|---|
+| `remote_base_url` | `https://api.groq.com/openai/v1` | any OpenAI-compatible endpoint |
+| `remote_model` | `whisper-large-v3-turbo` | provider's model name |
+| `remote_api_key_env` | `GROQ_API_KEY` | environment variable holding the key |
+| `remote_timeout` | `30` | seconds |
+
+The local backend keeps a much higher priority, so `auto` never picks the
+remote one by accident — selecting it is always explicit. Back to local:
+`./dictate set backends.stt auto`.
+
+Note that a `systemd --user` service does not read your shell profile; add the
+key with `systemctl --user set-environment GROQ_API_KEY=...` or an override
+file if you want it to survive a restart.
+
 ### Memory
 
 | Key | Default | Notes |
