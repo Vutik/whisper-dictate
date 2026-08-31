@@ -1,0 +1,11 @@
+# Thin client: dictation on a machine that sends audio to a whisper-dictate
+# server. No CUDA, no cuDNN, no model weights — a few megabytes instead of
+# roughly four gigabytes.
+numpy
+sounddevice
+
+# X11 hotkey grab
+python-xlib
+
+# Wayland / console hotkey via /dev/input
+evdev

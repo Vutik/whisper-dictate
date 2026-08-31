@@ -48,6 +48,13 @@ DEFAULTS = {
     "idle_unload_seconds": 30,
     "deep_unload_seconds": 900,
 
+    # --- HTTP API (off by default; see dictate_api.py for a standalone daemon) ---
+    "api_enabled": False,
+    "api_host": "127.0.0.1",          # anything else demands api_key
+    "api_port": 8760,
+    "api_key": None,                  # bearer token; required to leave loopback
+    "api_max_upload_mb": 25,
+
     # --- capture ---
     "samplerate": 16000,
     "input_device": None,             # None = system default source

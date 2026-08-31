@@ -17,28 +17,29 @@ from .interfaces import (AudioCapture, HotkeyBinder, Notifier, PARKED, READY,
 from .log import log
 
 
-class Dictator:
-    IDLE, RECORDING, BUSY = "idle", "recording", "busy"
+class ModelHost:
+    """Owns a recogniser's lifetime: load on demand, release when idle.
 
-    def __init__(self, cfg: dict, *, stt: SpeechToText, audio: AudioCapture,
-                 injector: TextInjector, notifier: Notifier,
-                 sound: SoundPlayer, postprocessor: TextProcessor):
+    Split out from the dictation loop so the headless API server can host a
+    model without dragging in a microphone, a hotkey and a desktop notifier.
+    """
+
+    def __init__(self, cfg: dict, *, stt: SpeechToText,
+                 postprocessor: TextProcessor):
         self.cfg = cfg
         self.stt = stt
-        self.audio = audio
-        self.injector = injector
-        self.notifier = notifier
-        self.sound = sound
         self.postprocessor = postprocessor
-
-        self.state = self.IDLE
-        self.lock = threading.Lock()
         self.model_lock = threading.RLock()
         self.last_used = time.monotonic()
-        self.watchdog: threading.Timer | None = None
         self._stop_watcher = threading.Event()
 
-    # -- lifecycle ---------------------------------------------------------
+    @property
+    def samplerate(self) -> int:
+        return self.cfg["samplerate"]
+
+    def _busy(self) -> bool:
+        """True while the host is doing work the model must stay loaded for."""
+        return False
 
     def start_background(self):
         threading.Thread(target=self._idle_watcher, daemon=True,
@@ -46,20 +47,6 @@ class Dictator:
 
     def shutdown(self):
         self._stop_watcher.set()
-        if self.watchdog:
-            self.watchdog.cancel()
-        self.notifier.close()
-
-    def apply(self, cfg: dict, **backends) -> None:
-        """Swap configuration and any rebuilt backends into the live daemon."""
-        with self.lock:
-            self.cfg = cfg
-        for attr, obj in backends.items():
-            if obj is not None:
-                setattr(self, attr, obj)
-        for part in (self.stt, self.audio, self.injector, self.notifier,
-                     self.sound, self.postprocessor):
-            part.cfg = cfg
 
     def ensure_loaded(self):
         with self.model_lock:
@@ -73,9 +60,8 @@ class Dictator:
     def _idle_watcher(self):
         cfg = self.cfg
         while not self._stop_watcher.wait(2.0):
-            with self.lock:
-                if self.state != self.IDLE:
-                    continue
+            if self._busy():
+                continue
             with self.model_lock:
                 idle = time.monotonic() - self.last_used
                 try:
@@ -91,6 +77,48 @@ class Dictator:
                         log(f"idle {idle:.0f} s → weights dropped from RAM")
                 except Exception as exc:
                     log(f"idle unload failed: {exc}")
+
+
+class Dictator(ModelHost):
+    IDLE, RECORDING, BUSY = "idle", "recording", "busy"
+
+    def __init__(self, cfg: dict, *, stt: SpeechToText, audio: AudioCapture,
+                 injector: TextInjector, notifier: Notifier,
+                 sound: SoundPlayer, postprocessor: TextProcessor):
+        super().__init__(cfg, stt=stt, postprocessor=postprocessor)
+        self.audio = audio
+        self.injector = injector
+        self.notifier = notifier
+        self.sound = sound
+
+        self.state = self.IDLE
+        self.lock = threading.Lock()
+        self.watchdog: threading.Timer | None = None
+
+    @property
+    def samplerate(self) -> int:
+        return self.audio.samplerate
+
+    def _busy(self) -> bool:
+        with self.lock:
+            return self.state != self.IDLE
+
+    def shutdown(self):
+        super().shutdown()
+        if self.watchdog:
+            self.watchdog.cancel()
+        self.notifier.close()
+
+    def apply(self, cfg: dict, **backends) -> None:
+        """Swap configuration and any rebuilt backends into the live daemon."""
+        with self.lock:
+            self.cfg = cfg
+        for attr, obj in backends.items():
+            if obj is not None:
+                setattr(self, attr, obj)
+        for part in (self.stt, self.audio, self.injector, self.notifier,
+                     self.sound, self.postprocessor):
+            part.cfg = cfg
 
     # -- commands ----------------------------------------------------------
 
@@ -194,7 +222,7 @@ class Dictator:
     def _process(self, audio: np.ndarray):
         cfg = self.cfg
         try:
-            samplerate = self.audio.samplerate
+            samplerate = self.samplerate
             duration = len(audio) / samplerate
             if duration < cfg["min_seconds"]:
                 self.notifier.show("✖ Too short", f"{duration:.1f} s",

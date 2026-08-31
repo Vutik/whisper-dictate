@@ -3,7 +3,14 @@
 # whisper-dictate installer.
 #
 #   curl -fsSL https://raw.githubusercontent.com/Vutik/whisper-dictate/main/install.sh | bash
-#   ./install.sh [--hotkey ctrl+alt+space] [--model large-v3-turbo] [--no-model]
+#
+# Three shapes:
+#   ./install.sh                          local recognition on this machine
+#   ./install.sh --server                 the same, plus an HTTP API for other machines
+#   ./install.sh --client http://host:8760   thin client: no CUDA, no model, ~88 MB
+#
+# Options: --hotkey SPEC  --model NAME  --no-model  --api-key KEY
+#          --api-host ADDR  --api-port N  --no-service  --dir PATH
 #
 # Idempotent: safe to re-run to upgrade or repair an existing install.
 set -euo pipefail
@@ -13,8 +20,18 @@ BRANCH="${WHISPER_DICTATE_BRANCH:-main}"
 HOTKEY="${HOTKEY:-ctrl+alt+space}"
 MODEL="${MODEL:-large-v3-turbo}"
 FETCH_MODEL=1
-UNIT="$HOME/.config/systemd/user/whisper-dictate.service"
-CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/whisper-dictate/config.json"
+MODE=local                       # local | server | client
+SERVER_URL=""
+API_KEY="${WHISPER_DICTATE_API_KEY:-}"
+API_HOST=127.0.0.1
+API_PORT=8760
+WITH_SERVICE=1
+CONFDIR="${XDG_CONFIG_HOME:-$HOME/.config}/whisper-dictate"
+CONFIG="$CONFDIR/config.json"
+ENVFILE="$CONFDIR/env"
+UNITDIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+UNIT="$UNITDIR/whisper-dictate.service"
+API_UNIT="$UNITDIR/whisper-dictate-api.service"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -22,6 +39,12 @@ while [ $# -gt 0 ]; do
     --model)  MODEL="$2";  shift 2 ;;
     --no-model) FETCH_MODEL=0; shift ;;
     --dir)    TARGET="$2"; shift 2 ;;
+    --server) MODE=server; shift ;;
+    --client) MODE=client; SERVER_URL="$2"; FETCH_MODEL=0; shift 2 ;;
+    --api-key)  API_KEY="$2";  shift 2 ;;
+    --api-host) API_HOST="$2"; shift 2 ;;
+    --api-port) API_PORT="$2"; shift 2 ;;
+    --no-service) WITH_SERVICE=0; shift ;;
     -h|--help) awk 'NR>1{ if (/^#/) { sub(/^# ?/,""); print } else exit }' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
@@ -106,9 +129,15 @@ if [ ! -x "$PY" ]; then
   say "creating virtualenv"
   "$PYBIN" -m venv "$DIR/.venv"
 fi
-say "installing python dependencies (this pulls ~2.5 GB of CUDA wheels)"
+if [ "$MODE" = "client" ]; then
+  say "installing thin-client dependencies (no CUDA, no model — about 88 MB)"
+  REQ="$DIR/requirements-client.txt"
+else
+  say "installing python dependencies (this pulls ~2.5 GB of CUDA wheels)"
+  REQ="$DIR/requirements.txt"
+fi
 "$PY" -m pip install -q --upgrade pip
-"$PY" -m pip install -q -r "$DIR/requirements.txt"
+"$PY" -m pip install -q -r "$REQ"
 "$PY" -m pip cache purge >/dev/null 2>&1 || true
 
 # ctranslate2 finds cuDNN/cuBLAS through the pip-installed nvidia wheels.
@@ -120,7 +149,9 @@ for base in site.getsitepackages():
 print(os.pathsep.join(sorted(set(paths))))
 PY
 )"
-if [ -n "$NVIDIA_LIBS" ] && command -v nvidia-smi >/dev/null; then
+if [ "$MODE" = "client" ]; then
+  say "recognition will run on $SERVER_URL"
+elif [ -n "$NVIDIA_LIBS" ] && command -v nvidia-smi >/dev/null; then
   say "NVIDIA GPU detected — using CUDA"
 else
   warn "no NVIDIA GPU found; the daemon will fall back to CPU (much slower)"
@@ -142,23 +173,52 @@ fi
 # --------------------------------------------------------------------------
 # 5. configuration
 # --------------------------------------------------------------------------
-mkdir -p "$(dirname "$CONFIG")"
-HOTKEY="$HOTKEY" MODEL="$MODEL" CONFIG="$CONFIG" "$PY" - <<'PY'
-import json, os, sys
+mkdir -p "$CONFDIR"
+HOTKEY="$HOTKEY" MODEL="$MODEL" MODE="$MODE" SERVER_URL="$SERVER_URL" \
+API_HOST="$API_HOST" API_PORT="$API_PORT" API_KEY="$API_KEY" "$PY" - <<'PY'
+import os, sys
 sys.path.insert(0, os.getcwd())
 from whisper_dictate import config
+
 cfg = config.load()
+mode = os.environ["MODE"]
 cfg["hotkey"] = os.environ["HOTKEY"]
-cfg["model"] = os.environ["MODEL"]
+
+if mode == "client":
+    cfg["backends"]["stt"] = "openai-api"
+    cfg["remote_base_url"] = os.environ["SERVER_URL"].rstrip("/")
+    cfg["remote_api_key_env"] = "WHISPER_DICTATE_API_KEY"
+    cfg["remote_model"] = os.environ["MODEL"]
+    cfg["api_enabled"] = False
+else:
+    cfg["backends"]["stt"] = "auto"
+    cfg["model"] = os.environ["MODEL"]
+    if mode == "server":
+        cfg["api_enabled"] = True
+        cfg["api_host"] = os.environ["API_HOST"]
+        cfg["api_port"] = int(os.environ["API_PORT"])
+        cfg["api_key"] = os.environ["API_KEY"] or None
+
 config._write(cfg)
+if cfg.get("api_key"):
+    os.chmod(config.CONFIG_PATH, 0o600)
 print(f"config: {config.CONFIG_PATH}")
 PY
+
+if [ -n "$API_KEY" ]; then
+  printf 'WHISPER_DICTATE_API_KEY=%s\n' "$API_KEY" > "$ENVFILE"
+  chmod 600 "$ENVFILE"
+  say "api key stored in $ENVFILE (mode 600)"
+fi
 
 # --------------------------------------------------------------------------
 # 6. service
 # --------------------------------------------------------------------------
+if [ "$WITH_SERVICE" = "0" ]; then
+  say "skipping service installation (--no-service)"
+else
 say "installing user service"
-mkdir -p "$(dirname "$UNIT")"
+mkdir -p "$UNITDIR"
 cat > "$UNIT" <<EOF
 [Unit]
 Description=whisper-dictate (resident speech-to-text daemon)
@@ -172,6 +232,7 @@ Environment=DISPLAY=${DISPLAY:-:0}
 Environment=XAUTHORITY=%t/gdm/Xauthority
 Environment=LD_LIBRARY_PATH=$NVIDIA_LIBS
 Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-$ENVFILE
 TimeoutStopSec=10
 KillMode=mixed
 Restart=on-failure
@@ -181,12 +242,44 @@ RestartSec=3
 WantedBy=default.target
 EOF
 
+if [ "$MODE" = "server" ]; then
+  say "installing standalone recognition server: $API_UNIT"
+  cat > "$API_UNIT" <<UNITEOF
+[Unit]
+Description=whisper-dictate recognition API (OpenAI-compatible)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=$PY $DIR/dictate_api.py
+Environment=LD_LIBRARY_PATH=$NVIDIA_LIBS
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-$ENVFILE
+TimeoutStopSec=10
+KillMode=mixed
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+UNITEOF
+fi
+
 systemctl --user daemon-reload
 systemctl --user enable --now whisper-dictate.service
+if [ "$MODE" = "server" ]; then
+  systemctl --user enable --now whisper-dictate-api.service
+fi
+fi
 
 # --------------------------------------------------------------------------
 # 7. verify
 # --------------------------------------------------------------------------
+if [ "$WITH_SERVICE" = "0" ]; then
+  printf '\033[1;32m✓ files installed\033[0m (no service started)\n'
+  exit 0
+fi
+
 say "waiting for the daemon"
 OK=0
 for i in $(seq 1 60); do
@@ -197,8 +290,15 @@ done
 echo
 if [ "$OK" = "1" ]; then
   printf '\033[1;32m✓ done\033[0m\n'
+  echo "  mode:     $MODE"
   echo "  backends: $("$DIR/dictate" backends)"
   echo "  hotkey:   $HOTKEY"
+  if [ "$MODE" = "client" ]; then
+    echo "  server:   $SERVER_URL"
+  elif [ "$MODE" = "server" ]; then
+    echo "  api:      http://$API_HOST:$API_PORT  (auth $([ -n "$API_KEY" ] && echo on || echo off))"
+    echo "  clients:  ./install.sh --client http://<this-host>:$API_PORT --api-key ..."
+  fi
 else
   warn "daemon did not answer — check: journalctl --user -u whisper-dictate -n 50"
 fi

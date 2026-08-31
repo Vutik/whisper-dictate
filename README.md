@@ -28,6 +28,18 @@ cd whisper-dictate
 ./install.sh
 ```
 
+### Three shapes
+
+| Command | What you get |
+|---|---|
+| `./install.sh` | local recognition on this machine |
+| `./install.sh --server --api-key SECRET --api-host 0.0.0.0` | the same, plus an HTTP API other machines can use |
+| `./install.sh --client http://gpu-box:8760 --api-key SECRET` | thin client: **88 MB**, no CUDA, no model weights |
+
+The thin client installs `numpy`, `sounddevice`, `python-xlib` and `evdev` and
+nothing else — recognition happens on the server, so a laptop with no GPU gets
+the same quality and speed as the machine holding the model.
+
 ### Installer options
 
 | Flag | Default | Effect |
@@ -36,6 +48,12 @@ cd whisper-dictate
 | `--model <name>` | `large-v3-turbo` | which model to download |
 | `--no-model` | — | skip the download; the daemon fetches it on first use |
 | `--dir <path>` | `~/.local/share/whisper-dictate` | install location for piped installs |
+| `--server` | off | also install the recognition API daemon |
+| `--client <url>` | off | thin client pointed at a server |
+| `--api-key <key>` | none | bearer token, stored in `~/.config/whisper-dictate/env` (mode 600) |
+| `--api-host <addr>` | `127.0.0.1` | anything but loopback requires a key |
+| `--api-port <n>` | `8760` | |
+| `--no-service` | off | install files only, do not touch systemd |
 
 The script is **idempotent** — re-running it upgrades or repairs an existing
 install without breaking anything.
@@ -132,6 +150,51 @@ remote one by accident — selecting it is always explicit. Back to local:
 Note that a `systemd --user` service does not read your shell profile; add the
 key with `systemctl --user set-environment GROQ_API_KEY=...` or an override
 file if you want it to survive a restart.
+
+### Serving recognition to other machines
+
+Off by default. The daemon can expose its loaded model over an
+OpenAI-compatible endpoint, and there is a separate daemon
+(`dictate_api.py`, unit `whisper-dictate-api.service`) that serves it without
+a microphone, hotkey or clipboard — for a headless GPU box.
+
+```bash
+./dictate set api_enabled true
+./dictate set api_key "$(openssl rand -hex 16)"
+./dictate set api_host 0.0.0.0          # refused unless api_key is set
+```
+
+| Key | Default | Notes |
+|---|---|---|
+| `api_enabled` | `false` | must be turned on deliberately |
+| `api_host` | `127.0.0.1` | binding anywhere else without `api_key` is refused |
+| `api_port` | `8760` | |
+| `api_key` | `null` | bearer token |
+| `api_max_upload_mb` | `25` | rejects larger uploads with 413 |
+
+Endpoints:
+
+```
+GET  /health                     no auth; reports model state
+GET  /v1/models
+POST /v1/audio/transcriptions    multipart: file, language?, prompt?, response_format?
+```
+
+```bash
+curl -s http://gpu-box:8760/v1/audio/transcriptions \
+  -H "Authorization: Bearer $KEY" \
+  -F file=@speech.wav -F response_format=verbose_json
+```
+
+Any OpenAI-compatible client works, this project's own `openai-api` backend
+included. WAV is decoded by the standard library; mp3, m4a, ogg and webm go
+through PyAV when the local recogniser is installed.
+
+**It is plain HTTP, with no TLS.** The bearer token crosses the network in
+clear, so treat it as safe only on a network you trust. For anything else, put
+it behind an SSH tunnel (`ssh -L 8760:localhost:8760 gpu-box`, then point the
+client at `127.0.0.1`), a WireGuard/Tailscale link, or a TLS-terminating
+reverse proxy.
 
 ### Memory
 
