@@ -94,7 +94,7 @@ class Supervisor:
 
         def report():
             if grabber.error:
-                self.dictator.notifier.show("⚠️ Хоткей не захвачен",
+                self.dictator.notifier.show("⚠️ Hotkey not grabbed",
                                             grabber.error, 8000, close_after=8.0)
         t = threading.Timer(0.5, report)
         t.daemon = True
@@ -161,8 +161,8 @@ class Supervisor:
             if need_stt:
                 threading.Thread(target=self.dictator._preload, daemon=True).start()
 
-            self.dictator.notifier.show("⚙️ Настройки перечитаны",
-                                        ", ".join(changed[:6]) or "без изменений",
+            self.dictator.notifier.show("⚙️ Settings reloaded",
+                                        ", ".join(changed[:6]) or "no changes",
                                         3000, close_after=3.0)
             return "reloaded: " + (", ".join(changed) or "(forced)")
 

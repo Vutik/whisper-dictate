@@ -124,7 +124,7 @@ class Dictator:
             return self.start()
         if state == self.RECORDING:
             return self.stop()
-        self.notifier.show("🕐 Расшифровка…", "Подождите завершения", 4000,
+        self.notifier.show("🕐 Transcribing…", "Please wait", 4000,
                            close_after=4.0)
         return "busy"
 
@@ -140,7 +140,7 @@ class Dictator:
                 self.state = self.IDLE
             log(f"capture failed: {exc}")
             self.sound.play("error")
-            self.notifier.show("⚠️ Микрофон недоступен", str(exc), 6000,
+            self.notifier.show("⚠️ Microphone unavailable", str(exc), 6000,
                                close_after=6.0)
             return f"error: {exc}"
 
@@ -148,7 +148,7 @@ class Dictator:
         # Warm the model back up while the user is still speaking, so an idle
         # unload never costs any perceptible latency.
         threading.Thread(target=self._preload, daemon=True).start()
-        self.notifier.show("🎤 Запись…", "Нажмите хоткей ещё раз",
+        self.notifier.show("🎤 Recording…", "Press the hotkey again",
                            self.cfg["max_seconds"] * 1000)
         self.watchdog = threading.Timer(self.cfg["max_seconds"], self._timeout)
         self.watchdog.daemon = True
@@ -175,7 +175,7 @@ class Dictator:
         self.audio.stop()
         with self.lock:
             self.state = self.IDLE
-        self.notifier.show("✖ Отменено", "", 1500, close_after=1.5)
+        self.notifier.show("✖ Cancelled", "", 1500, close_after=1.5)
         return "cancelled"
 
     def stop(self) -> str:
@@ -197,11 +197,11 @@ class Dictator:
             samplerate = self.audio.samplerate
             duration = len(audio) / samplerate
             if duration < cfg["min_seconds"]:
-                self.notifier.show("✖ Слишком коротко", f"{duration:.1f} с",
+                self.notifier.show("✖ Too short", f"{duration:.1f} s",
                                    1500, close_after=1.5)
                 return
 
-            self.notifier.show("🕐 Расшифровка…", f"{duration:.1f} с", 30000)
+            self.notifier.show("🕐 Transcribing…", f"{duration:.1f} s", 30000)
             self.ensure_loaded()
 
             t0 = time.monotonic()
@@ -211,7 +211,7 @@ class Dictator:
             text = self.postprocessor.process(transcript)
             if not text:
                 self.sound.play("error")
-                self.notifier.show("✖ Ничего не распознано", "", 2000,
+                self.notifier.show("✖ Nothing recognised", "", 2000,
                                    close_after=2.0)
                 return
 
@@ -227,12 +227,12 @@ class Dictator:
             if len(preview) > 90:
                 preview = preview[:90] + "…"
             self.notifier.show(
-                f"✓ {transcript.language} · {elapsed:.1f} с", preview,
+                f"✓ {transcript.language} · {elapsed:.1f} s", preview,
                 2500, close_after=2.5)
         except Exception as exc:
             log(f"transcription failed: {exc}")
             self.sound.play("error")
-            self.notifier.show("⚠️ Ошибка расшифровки", str(exc), 6000,
+            self.notifier.show("⚠️ Transcription failed", str(exc), 6000,
                                close_after=6.0)
         finally:
             self.last_used = time.monotonic()

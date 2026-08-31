@@ -1,25 +1,25 @@
 # whisper-dictate
 
-Диктовка текста в любое окно — локально, офлайн, на GPU. Аналог superwhisper
-для Linux.
+Dictate text into any window — locally, offline, on your GPU. A superwhisper
+equivalent for Linux.
 
-Нажали хоткей → говорите → нажали снова → текст появился там, где стоял курсор.
-Ничего не уходит в сеть.
+Press the hotkey, speak, press it again, and the text lands wherever your
+cursor was. Nothing leaves the machine.
 
 ---
 
-## Установка
+## Install
 
-### Одной командой
+### One command
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/USER/whisper-dictate/main/install.sh | bash
 ```
 
-> Подставьте свой адрес репозитория. Для установки «из веба» скрипту нужно
-> знать, откуда брать исходники: `WHISPER_DICTATE_REPO=https://…/whisper-dictate.git`.
+> Substitute your own repository. A piped install needs to know where to fetch
+> the sources from: `WHISPER_DICTATE_REPO=https://…/whisper-dictate.git`.
 
-### Из каталога с исходниками
+### From a checkout
 
 ```bash
 git clone https://github.com/USER/whisper-dictate.git
@@ -27,223 +27,223 @@ cd whisper-dictate
 ./install.sh
 ```
 
-### Параметры установщика
+### Installer options
 
-| Флаг | По умолчанию | Что делает |
+| Flag | Default | Effect |
 |---|---|---|
-| `--hotkey <spec>` | `ctrl+alt+space` | комбинация для переключения записи |
-| `--model <name>` | `large-v3-turbo` | какую модель скачать |
-| `--no-model` | — | не качать модель (скачается при первом запуске) |
-| `--dir <path>` | `~/.local/share/whisper-dictate` | куда ставить при установке из веба |
+| `--hotkey <spec>` | `ctrl+alt+space` | combination that toggles recording |
+| `--model <name>` | `large-v3-turbo` | which model to download |
+| `--no-model` | — | skip the download; the daemon fetches it on first use |
+| `--dir <path>` | `~/.local/share/whisper-dictate` | install location for piped installs |
 
-Скрипт **идемпотентный** — повторный запуск обновляет и чинит существующую
-установку, ничего не ломая.
+The script is **idempotent** — re-running it upgrades or repairs an existing
+install without breaking anything.
 
-### Что он делает
+### What it does
 
-1. Определяет тип сессии (X11 или Wayland) и ставит нужные системные пакеты
-2. Проверяет наличие NVIDIA GPU, предупреждает если его нет
-3. Создаёт виртуальное окружение и ставит зависимости (~2.5 ГБ CUDA-колёс)
-4. Скачивает модель (~1.6 ГБ в `~/.cache/huggingface`)
-5. Прописывает systemd-сервис пользователя и запускает его
-6. Проверяет, что демон отвечает, и показывает выбранные бэкенды
+1. Detects the session type (X11 or Wayland) and installs the matching helpers
+2. Checks for an NVIDIA GPU and warns if there is none
+3. Creates a virtualenv and installs dependencies (~2.5 GB of CUDA wheels)
+4. Downloads the model (~1.6 GB into `~/.cache/huggingface`)
+5. Installs and starts a `systemd --user` service
+6. Waits for the daemon to answer and prints the selected backends
 
-### Требования
+### Requirements
 
 | | |
 |---|---|
-| ОС | Linux, X11 или Wayland |
-| Python | 3.9+ с модулем `venv` |
-| GPU | NVIDIA — желательно; без него работает на CPU, но медленно |
-| Диск | ~4.5 ГБ (окружение + модель) |
-| Автозапуск | сервис `systemd --user`, стартует при входе в сессию |
+| OS | Linux, X11 or Wayland |
+| Python | 3.9+ with the `venv` module |
+| GPU | NVIDIA strongly preferred; CPU works but is roughly 15× slower |
+| Disk | ~4.5 GB (environment plus model) |
+| Autostart | `systemd --user` service, starts with your graphical session |
 
 ---
 
-## Как пользоваться
+## Use
 
-1. Поставьте курсор в любое поле ввода
-2. **Ctrl+Alt+Space** — пойдёт запись (звук + уведомление «🎤 Запись…»)
-3. Говорите, можно мешать русский с английским
-4. **Ctrl+Alt+Space** — через ~1 с текст вставится в это поле
+1. Put the cursor in any text field
+2. **Ctrl+Alt+Space** — recording starts (sound plus a "🎤 Recording…" banner)
+3. Speak; mixing languages is fine
+4. **Ctrl+Alt+Space** — about a second later the text is inserted
 
 ```bash
-./dictate                  # то же, что хоткей
+./dictate                  # same as the hotkey
 ./dictate start|stop|cancel
-./dictate status           # idle / recording / busy + состояние модели
-./dictate backends         # какие реализации выбраны
+./dictate status           # idle / recording / busy, plus model state
+./dictate backends         # which implementations are in use
 ```
 
 ---
 
-## Настройки
+## Settings
 
-Меняются на лету — демон следит за конфигом и перечитывает его за две секунды,
-перезапуск не нужен даже при смене модели или хоткея.
+Applied live — the daemon watches the config file and re-reads it within two
+seconds. Even changing the model or the hotkey needs no restart.
 
 ```bash
-./dictate get                    # весь конфиг
-./dictate get model              # одно значение
-./dictate set model small        # изменить и применить
+./dictate get                    # everything
+./dictate get model              # one value
+./dictate set model small        # change and apply
 ./dictate set backends.inject x11
-./dictate edit                   # открыть в $EDITOR
-./dictate reload                 # перечитать принудительно
+./dictate edit                   # open in $EDITOR
+./dictate reload                 # force a re-read
 ```
 
-Файл: `~/.config/whisper-dictate/config.json`.
+File: `~/.config/whisper-dictate/config.json`.
 
-### Распознавание
+### Recognition
 
-| Ключ | По умолчанию | Комментарий |
+| Key | Default | Notes |
 |---|---|---|
-| `model` | `large-v3-turbo` | `large-v3` точнее и вдвое медленнее; `medium`, `small`, `base`, `tiny` — легче и хуже |
-| `device` | `cuda` | `cpu` — работает, но ~10 с на фразу вместо 0.6 с |
-| `compute_type` | `int8_float16` | 1.1 ГБ VRAM. `float16` — 2.2 ГБ без выигрыша в скорости |
-| `language` | `null` | автоопределение (ru/en вперемешку). Жёстко: `"ru"` |
-| `beam_size` | `5` | больше — точнее и медленнее |
-| `vad_filter` | `true` | отсекать тишину до распознавания |
-| `initial_prompt` | `null` | произвольная подсказка декодеру |
-| `no_speech_threshold` | `0.9` | отбрасывать сегменты с такой вероятностью тишины |
+| `model` | `large-v3-turbo` | `large-v3` is more accurate and twice as slow; `medium`, `small`, `base`, `tiny` are lighter and worse |
+| `device` | `cuda` | `cpu` works, but takes ~10 s per phrase instead of 0.6 s |
+| `compute_type` | `int8_float16` | 1.1 GB VRAM. `float16` costs 2.2 GB and is no faster |
+| `language` | `null` | autodetect, which handles mixed-language speech. Pin with `"ru"`, `"en"`, … |
+| `beam_size` | `5` | higher is more accurate and slower |
+| `vad_filter` | `true` | strip silence before decoding |
+| `initial_prompt` | `null` | free-form hint for the decoder |
+| `no_speech_threshold` | `0.9` | drop segments this likely to be silence |
 
-### Память
+### Memory
 
-| Ключ | По умолчанию | Комментарий |
+| Key | Default | Notes |
 |---|---|---|
-| `idle_unload_seconds` | `30` | простой до освобождения VRAM. Возврат 0.15 с, спрятан за началом записи. `0` — не выгружать |
-| `deep_unload_seconds` | `900` | простой до выброса весов из RAM. Возврат 0.75 с. `0` — не выбрасывать |
+| `idle_unload_seconds` | `30` | idle time before VRAM is released. Coming back takes 0.15 s and is hidden behind the start of recording. `0` disables |
+| `deep_unload_seconds` | `900` | idle time before the weights leave RAM too. Coming back takes 0.75 s. `0` disables |
 
-Расход: 1.1 ГБ VRAM во время работы, **110 МиБ** через 30 с простоя,
-RSS ~690 МБ через 15 минут.
+Measured: 1.1 GB VRAM while working, **110 MiB** after 30 s idle, ~690 MB RSS
+after 15 minutes.
 
-### Запись
+### Capture
 
-| Ключ | По умолчанию | Комментарий |
+| Key | Default | Notes |
 |---|---|---|
-| `samplerate` | `16000` | Whisper всё равно работает на 16 кГц |
-| `input_device` | `null` | микрофон по умолчанию в системе; можно указать имя или индекс |
-| `max_seconds` | `300` | автостоп записи |
-| `min_seconds` | `0.35` | короче — считается случайным нажатием |
+| `samplerate` | `16000` | Whisper works at 16 kHz regardless |
+| `input_device` | `null` | system default microphone; accepts a name or index |
+| `max_seconds` | `300` | recording stops by itself |
+| `min_seconds` | `0.35` | anything shorter counts as a stray keypress |
 
-### Хоткей
+### Hotkey
 
-| Ключ | По умолчанию | Комментарий |
+| Key | Default | Notes |
 |---|---|---|
-| `hotkey` | `ctrl+alt+space` | модификаторы `ctrl`, `alt`, `shift`, `super` |
-| `hotkey_grab` | `true` | `false` — только через `./dictate` |
+| `hotkey` | `ctrl+alt+space` | modifiers `ctrl`, `alt`, `shift`, `super` |
+| `hotkey_grab` | `true` | `false` leaves only `./dictate` |
 
-`dictate set hotkey` сверяется с горячими клавишами рабочего стола и
-отказывается ставить занятую комбинацию (перекрыть — флагом `--force`).
-Проверка нужна не зря: X11-захват занятой комбинации проходит **успешно**,
-но GNOME обрабатывает её параллельно — Ctrl+Alt+D одновременно диктовал бы
-и сворачивал все окна.
+`dictate set hotkey` checks the combination against the desktop's own
+shortcuts and refuses to take one that is already used (override with
+`--force`). That check earns its keep: an X11 grab of an occupied combination
+*succeeds*, yet GNOME still acts on it — Ctrl+Alt+D would dictate and minimise
+every window at the same time.
 
-### Вставка текста
+### Text insertion
 
-| Ключ | По умолчанию | Комментарий |
+| Key | Default | Notes |
 |---|---|---|
-| `insert_method` | `paste` | буфер + Ctrl+V. `type` — эмуляция набора, `clipboard` — только скопировать |
-| `type_delay_ms` | `4` | задержка между клавишами для `type` |
-| `append_space` | `true` | пробел в конце, чтобы диктовать подряд |
-| `restore_clipboard` | `true` | вернуть прежнее содержимое буфера через 0.6 с |
-| `terminal_classes` | 12 значений | в этих окнах вставка идёт через Ctrl+**Shift**+V |
+| `insert_method` | `paste` | clipboard plus Ctrl+V. `type` synthesises keystrokes, `clipboard` only copies |
+| `type_delay_ms` | `4` | inter-key delay for `type` |
+| `append_space` | `true` | trailing space, so dictating in sequence reads naturally |
+| `restore_clipboard` | `true` | put the previous clipboard back after 0.6 s |
+| `terminal_classes` | 12 entries | windows where paste is Ctrl+**Shift**+V |
 
-`paste` стоит по умолчанию не случайно: при активной русской раскладке
-эмуляция набора кириллицы на X11 выдаёт мусор, а буфер обмена от раскладки
-не зависит. Именно на этом, судя по всему, ломаются готовые аналоги.
+`paste` is the default for a reason: with a non-Latin keyboard layout active,
+synthesised typing on X11 produces garbage, while the clipboard path does not
+depend on the layout at all. This appears to be exactly where the off-the-shelf
+alternatives fall over.
 
-### Английские термины в русской речи
+### Technical terms in non-English speech
 
-Whisper транслитерирует технические слова — «мохоз» вместо «macOS». Лечится
-двумя механизмами:
+Whisper transliterates technical words — Russian dictation turns "macOS" into
+"мохоз". Two mechanisms fix it:
 
-| Ключ | Что делает |
+| Key | Purpose |
 |---|---|
-| `vocabulary` | 53 правильных написания; уходят в декодер как `initial_prompt` и `hotwords` — предотвращает проблему |
-| `use_hotwords` | передавать ли словарь как `hotwords` |
-| `replacements` | 51 правило замены по целым словам, регистронезависимо — исправляет проскочившее |
-| `hallucination_phrases` | фразы, которые Whisper выдумывает над тишиной («продолжение следует») — отбрасываются, если составляют весь результат |
+| `vocabulary` | 53 correct spellings, fed to the decoder as `initial_prompt` and `hotwords` — prevents the problem |
+| `use_hotwords` | whether to pass the vocabulary as `hotwords` |
+| `replacements` | 51 whole-word, case-insensitive rules — repairs whatever slipped through |
+| `hallucination_phrases` | phrases Whisper invents over silence; dropped when they are the entire result |
 
 ```
 Открой сеттингс и нажми аксепт    →  Открой settings и нажми accept
 Отправь пул реквест в гитхаб      →  Отправь pull request в GitHub
-Работает под линукс и виндовс     →  Работает под Linux и Windows
 ```
 
-Пополнять: `./dictate set replacements '{"деплой":"deploy", ...}'` или через
-`./dictate edit`.
+Extend with `./dictate edit` or `./dictate set replacements '{...}'`.
 
-### Уведомления и звук
+### Feedback
 
-| Ключ | По умолчанию |
+| Key | Default |
 |---|---|
 | `notifications` | `true` |
 | `sounds` | `true` |
-| `sound_start` / `sound_done` / `sound_error` | звуки из `/usr/share/sounds/freedesktop/stereo/` |
+| `sound_start` · `sound_done` · `sound_error` | files under `/usr/share/sounds/freedesktop/stereo/` |
 
-### Выбор реализаций
+### Choosing implementations
 
-| Ключ | По умолчанию |
+| Key | Default |
 |---|---|
 | `backends.stt` · `audio` · `inject` · `hotkey` · `notify` · `sound` · `postprocess` | `auto` |
 
-`auto` означает: при старте опрашивается каждая зарегистрированная реализация,
-берётся работоспособная с наибольшим приоритетом. Ничего настраивать руками
-не нужно — при переходе с X11 на Wayland вставка сама переключится. Закрепить
-жёстко: `./dictate set backends.inject x11`.
+`auto` means every registered implementation is asked whether it works here,
+and the highest-priority usable one wins. Nothing needs configuring by hand —
+moving from X11 to Wayland switches text insertion on its own. Pin one with
+`./dictate set backends.inject x11`.
 
 ---
 
-## Поддержка платформ
+## Platform support
 
 ```bash
-./dictate backends                                  # что выбрано сейчас
-.venv/bin/python dictate_daemon.py --list-backends  # что вообще есть
+./dictate backends                                  # what is in use
+.venv/bin/python dictate_daemon.py --list-backends  # what exists
 ```
 
 | | X11 | Wayland (GNOME) | macOS |
 |---|---|---|---|
-| Распознавание | ✅ CUDA | ✅ CUDA | ⚠️ только CPU |
-| Микрофон | ✅ | ✅ | ✅ |
-| Вставка текста | ✅ `xdotool` + `xclip` | ⚠️ `wl-copy` + `ydotool` | ❌ нужен бэкенд |
-| Хоткей | ✅ `XGrabKey` | ⚠️ `evdev` | ❌ нужен бэкенд |
-| Уведомления | ✅ DBus | ✅ DBus | ❌ нужен бэкенд |
+| Recognition | ✅ CUDA | ✅ CUDA | ⚠️ CPU only |
+| Microphone | ✅ | ✅ | ✅ |
+| Text insertion | ✅ `xdotool` + `xclip` | ⚠️ `wl-copy` + `ydotool` | ❌ backend needed |
+| Hotkey | ✅ `XGrabKey` | ⚠️ `evdev` | ❌ backend needed |
+| Notifications | ✅ DBus | ✅ DBus | ❌ backend needed |
 
-### Что нужно для Wayland
+### Wayland prerequisites
 
-Wayland принципиально не даёт приложению ни перехватить клавишу, ни
-синтезировать нажатие. Обходится через ядро:
+Wayland deliberately denies applications both key grabbing and key synthesis,
+so both go through the kernel:
 
 ```bash
-sudo usermod -aG input $USER     # чтение /dev/input для хоткея; нужен релогин
-sudo apt install ydotool          # синтез Ctrl+V через /dev/uinput
+sudo usermod -aG input $USER     # read /dev/input for the hotkey; needs re-login
+sudo apt install ydotool          # synthesise Ctrl+V through /dev/uinput
 ```
 
-Оговорки, о которых честно стоит знать:
+Caveats worth knowing up front:
 
-- `evdev` не **поглощает** клавишу — приложение под курсором тоже её получит.
-  Выбирайте комбинацию, которую программы игнорируют.
-- Группа `input` даёт процессу доступ ко всему потоку клавиатуры. Это ослабление
-  изоляции; решайте осознанно.
-- `wtype` на GNOME бесполезен: Mutter не реализует `zwp_virtual_keyboard_v1`.
-- Без `ydotool` всё равно работает — текст просто копируется в буфер, вставляете
-  вы сами.
-- Портал `GlobalShortcuts` (чистое решение) требует xdg-desktop-portal ≥ 1.17;
-  в Ubuntu 22.04 версия 1.14.
+- `evdev` does not **consume** the key — the focused application receives it
+  too. Pick a combination applications ignore.
+- The `input` group grants access to the entire keyboard stream. That is a real
+  weakening of isolation; decide deliberately.
+- `wtype` is useless on GNOME: Mutter does not implement
+  `zwp_virtual_keyboard_v1`.
+- Without `ydotool` everything still works — the text is copied and you paste
+  it yourself.
+- The `GlobalShortcuts` portal, the clean answer, needs
+  xdg-desktop-portal ≥ 1.17; Ubuntu 22.04 ships 1.14.
 
 ---
 
-## Архитектура
+## Architecture
 
-Всё системно-зависимое спрятано за интерфейсами, ядро не импортирует ни X11,
-ни CUDA, ни DBus. Реализации сами регистрируются в реестре.
+Everything platform-specific sits behind an interface; the core imports
+neither X11, nor CUDA, nor DBus. Implementations register themselves.
 
 ```
 whisper_dictate/
   interfaces.py   SpeechToText · AudioCapture · TextInjector · HotkeyBinder
                   Notifier · SoundPlayer · TextProcessor
-  registry.py     @register(kind, name, priority) + выбор "auto"
-  core.py         конечный автомат диктовки, платформо-независимый
-  server.py       сборка зависимостей, сокет, горячая перезагрузка конфига
+  registry.py     @register(kind, name, priority) and "auto" resolution
+  core.py         the dictation state machine, platform-independent
+  server.py       dependency wiring, control socket, live config reload
   backends/       stt_faster_whisper · audio_sounddevice
                   inject_x11 · inject_wayland
                   hotkey_x11 · hotkey_evdev
@@ -251,9 +251,9 @@ whisper_dictate/
                   postprocess_rules
 ```
 
-### Как добавить поддержку новой системы
+### Supporting a new system
 
-Положить файл в `backends/`, ничего больше не трогая:
+Drop a file into `backends/`; nothing else changes:
 
 ```python
 @register("inject", "macos", priority=120)
@@ -268,34 +268,34 @@ class MacInjector(TextInjector):
                         'tell app "System Events" to keystroke "v" using command down'])
 ```
 
-Модуль подхватится автоматически, а `is_available()` не даст ему выиграть не
-на своей платформе. Модуль, чьи зависимости отсутствуют, пропускается с
-записью в лог, а не роняет демон.
+The module is imported automatically, and `is_available()` keeps it from
+winning off its own platform. A module whose dependencies are missing is
+skipped with a log line rather than taking the daemon down.
 
 ---
 
-## Диагностика
+## Troubleshooting
 
 ```bash
 systemctl --user status whisper-dictate
-journalctl --user -u whisper-dictate -f     # видно распознанный текст и тайминги
+journalctl --user -u whisper-dictate -f     # shows recognised text and timings
 ./dictate ping
 ```
 
-| Симптом | Куда смотреть |
+| Symptom | Where to look |
 |---|---|
-| Хоткей не срабатывает | в логе строка `hotkey: grabbed` |
-| Текст распознался, но не вставился | `./dictate get insert_method`, проверить `xdotool`/`wl-copy` |
-| «Ничего не распознано» | тихий или не тот микрофон: `./dictate set input_device "..."` |
-| Долгий первый запуск | загрузка модели, ~2 с; дальше живёт в памяти |
-| Занята видеопамять | `systemctl --user stop whisper-dictate` или `./dictate set idle_unload_seconds 10` |
+| Hotkey does nothing | the `hotkey: grabbed` line in the log |
+| Text recognised but not inserted | `./dictate get insert_method`; check `xdotool` / `wl-copy` |
+| "Nothing recognised" | quiet or wrong microphone: `./dictate set input_device "..."` |
+| Slow first run | model load, ~2 s; afterwards it stays resident |
+| GPU memory occupied | `systemctl --user stop whisper-dictate`, or `./dictate set idle_unload_seconds 10` |
 
 ---
 
-## Удаление
+## Uninstall
 
 ```bash
-./uninstall.sh                                  # сервис
-rm -rf ~/.cache/huggingface/hub/*whisper*       # модели
-rm -rf ~/.config/whisper-dictate                # настройки
+./uninstall.sh                                  # the service
+rm -rf ~/.cache/huggingface/hub/*whisper*       # models
+rm -rf ~/.config/whisper-dictate                # settings
 ```

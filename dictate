@@ -97,7 +97,7 @@ def send(cmd: str, quiet: bool = False) -> str:
     except OSError:
         if not quiet:
             subprocess.run(["notify-send", "-a", "Dictate", "-u", "critical",
-                            "⚠️ Демон диктовки не запущен",
+                            "⚠️ Dictation daemon is not running",
                             "systemctl --user start whisper-dictate"],
                            check=False)
             print(f"cannot reach daemon at {SOCKET}", file=sys.stderr)
@@ -157,12 +157,12 @@ def main() -> int:
         if key == "hotkey" and isinstance(value, str):
             clashes = hotkey_conflicts(value)
             if clashes:
-                print(f"⚠️  {value} уже занята рабочим столом: "
+                print(f"⚠️  {value} is already a desktop shortcut: "
                       f"{', '.join(clashes)}", file=sys.stderr)
-                print("   Комбинация сработает и там, и здесь одновременно.",
+                print("   It would trigger both the desktop action and dictation.",
                       file=sys.stderr)
                 if "--force" not in args:
-                    print("   Отменено. Повторите с --force, если так и надо.",
+                    print("   Aborted. Re-run with --force if that is what you want.",
                           file=sys.stderr)
                     return 1
 
@@ -174,7 +174,7 @@ def main() -> int:
         try:
             print(send("reload", quiet=True))
         except SystemExit:
-            print("(демон не запущен — применится при старте)")
+            print("(daemon not running — will apply on next start)")
         return 0
 
     if cmd == "edit":

@@ -75,7 +75,7 @@ class FasterWhisperSTT(SpeechToText):
         if vocab:
             # Seeding the decoder with the exact spellings makes Whisper emit
             # "macOS" rather than transliterating it into Cyrillic.
-            parts.append("Термины: " + ", ".join(vocab) + ".")
+            parts.append(", ".join(vocab) + ".")
         return " ".join(parts) or None
 
     def transcribe(self, audio: np.ndarray, samplerate: int) -> Transcript:

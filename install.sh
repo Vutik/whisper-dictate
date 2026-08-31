@@ -196,24 +196,24 @@ done
 
 echo
 if [ "$OK" = "1" ]; then
-  printf '\033[1;32m✓ готово\033[0m\n'
-  echo "  бэкенды: $("$DIR/dictate" backends)"
-  echo "  хоткей:  $HOTKEY"
+  printf '\033[1;32m✓ done\033[0m\n'
+  echo "  backends: $("$DIR/dictate" backends)"
+  echo "  hotkey:   $HOTKEY"
 else
-  warn "демон не ответил — смотрите: journalctl --user -u whisper-dictate -n 50"
+  warn "daemon did not answer — check: journalctl --user -u whisper-dictate -n 50"
 fi
 
 if [ "$SESSION" = "wayland" ]; then
   echo
-  warn "Wayland: захват хоткея требует доступа к /dev/input"
+  warn "Wayland: grabbing a hotkey needs access to /dev/input"
   if ! id -nG | tr ' ' '\n' | grep -qx input; then
-    echo "     sudo usermod -aG input $USER   # затем перелогиниться"
+    echo "     sudo usermod -aG input $USER   # then log out and back in"
   fi
   command -v ydotool >/dev/null || \
-    echo "     без ydotool текст только копируется в буфер — вставлять придётся вручную"
+    echo "     without ydotool the text is only copied — you paste it yourself"
 fi
 
 echo
-echo "  ./dictate            переключить запись (то же, что хоткей)"
-echo "  ./dictate get        показать настройки"
-echo "  ./dictate set K V    изменить настройку на лету"
+echo "  ./dictate            toggle recording (same as the hotkey)"
+echo "  ./dictate get        show settings"
+echo "  ./dictate set K V    change a setting, applied live"
