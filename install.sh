@@ -2,7 +2,7 @@
 #
 # whisper-dictate installer.
 #
-#   curl -fsSL <raw-url>/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Vutik/whisper-dictate/main/install.sh | bash
 #   ./install.sh [--hotkey ctrl+alt+space] [--model large-v3-turbo] [--no-model]
 #
 # Idempotent: safe to re-run to upgrade or repair an existing install.
@@ -22,7 +22,7 @@ while [ $# -gt 0 ]; do
     --model)  MODEL="$2";  shift 2 ;;
     --no-model) FETCH_MODEL=0; shift ;;
     --dir)    TARGET="$2"; shift 2 ;;
-    -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) awk 'NR>1{ if (/^#/) { sub(/^# ?/,""); print } else exit }' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
