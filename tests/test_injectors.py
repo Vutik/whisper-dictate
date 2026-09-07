@@ -15,6 +15,7 @@ class Recorder:
     def __init__(self):
         self.runs = []
         self.popens = []
+        self.popen_kwargs = []
 
     def run(self, argv, **kw):
         self.runs.append(argv)
@@ -26,9 +27,12 @@ class Recorder:
 
     def Popen(self, argv, **kw):
         self.popens.append(argv)
+        self.popen_kwargs.append(kw)
         rec = self
 
         class P:
+            returncode = 0
+
             def communicate(self, data=None, timeout=None):
                 rec.popens[-1] = (argv, data)
                 return b"", b""
@@ -109,3 +113,22 @@ def test_wayland_injector_needs_wayland(monkeypatch):
     from whisper_dictate.backends.inject_wayland import WaylandInjector
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     assert WaylandInjector.is_available({}) is False
+
+
+def test_clipboard_writer_never_waits_on_a_pipe(rec, cfg):
+    """`xclip -i` must not be given a pipe for stderr.
+
+    It forks a child that owns the selection until another application
+    claims it, and that child inherits the parent's stderr. On a pipe,
+    communicate() blocks for an EOF that arrives only when the clipboard
+    changes hands, so every single paste costs the full timeout and then
+    fails. A file has no such handshake.
+    """
+    X11Injector(cfg).insert("привет")
+
+    writes = [kw for argv, kw in zip(rec.popens, rec.popen_kwargs)
+              if "xclip" in str(argv)]
+    assert writes, "expected the text to go through xclip"
+    for kw in writes:
+        assert kw.get("stderr") != rec.PIPE
+        assert kw.get("stdout") != rec.PIPE

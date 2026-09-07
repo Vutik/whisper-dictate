@@ -386,6 +386,7 @@ the state machine is exercised directly.
 | `test_remote_stt.py` | WAV encoding, multipart shape and error handling, against a throwaway HTTP server |
 | `test_injectors.py` | paste-vs-type routing and terminal detection, with subprocess replaced |
 | `test_hotkey_spec.py` | hotkey parsing and its error reporting |
+| `test_diagnose.py` | classifying a captured buffer, so an empty result names its cause |
 
 CI runs them on Python 3.9–3.13 (`.github/workflows/tests.yml`).
 
@@ -397,11 +398,24 @@ journalctl --user -u whisper-dictate -f     # shows recognised text and timings
 ./dictate ping
 ```
 
+A dictation that produces no text names its own cause, in the log and in the
+notification. The three silent failures look alike from the outside and are
+told apart by the level of the captured waveform, which every one of these
+lines carries as `peak`/`rms`:
+
+| What you see | What it means |
+|---|---|
+| `Microphone is silent` | every sample is zero — this is not a real capture device. Usually the sound card fell out of PipeWire: check `pactl list short sources`, and if the only entry is `auto_null.monitor`, run `systemctl --user restart wireplumber` **and then restart this daemon**, because PortAudio caches the device list at process start |
+| `Microphone almost silent` | a signal path with nothing on it: `pactl get-source-mute @DEFAULT_SOURCE@` and `pactl get-source-volume @DEFAULT_SOURCE@` |
+| `Microphone produced no audio` | the stream opened but delivered zero blocks — the device disappeared mid-recording |
+| `Nothing recognised` | the audio was audible and the recogniser still returned no words; the line quotes the raw transcript before post-processing |
+
 | Symptom | Where to look |
 |---|---|
 | Hotkey does nothing | the `hotkey: grabbed` line in the log |
-| Text recognised but not inserted | `./dictate get insert_method`; check `xdotool` / `wl-copy` |
-| "Nothing recognised" | quiet or wrong microphone: `./dictate set input_device "..."` |
+| Text recognised but not inserted | the `insert failed via …` line, which carries `xdotool`'s own stderr; then `./dictate get insert_method` |
+| Wrong device picked | the `audio: capturing from …` line, logged whenever the device changes; `./dictate set input_device "..."` |
+| Choppy audio | `audio: PortAudio reported N× …` — blocks were dropped |
 | Slow first run | model load, ~2 s; afterwards it stays resident |
 | GPU memory occupied | `systemctl --user stop whisper-dictate`, or `./dictate set idle_unload_seconds 10` |
 
