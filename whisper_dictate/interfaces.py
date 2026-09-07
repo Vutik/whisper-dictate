@@ -38,6 +38,11 @@ class SpeechToText(ABC):
     #: True when the backend can park weights outside the accelerator cheaply
     supports_parking: bool = False
 
+    #: True when the recogniser holds weights that idle unloading can free.
+    #: A remote one holds nothing, and the idle watcher must leave it be
+    #: rather than "release" it every couple of seconds, forever.
+    holds_weights: bool = True
+
     def __init__(self, cfg: dict):
         self.cfg = cfg
 

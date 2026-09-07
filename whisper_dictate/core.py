@@ -64,6 +64,10 @@ class ModelHost:
             if self._busy():
                 continue
             with self.model_lock:
+                # Checked here rather than before the loop: a config reload
+                # can swap a remote recogniser for a local one under us.
+                if not self.stt.holds_weights:
+                    continue
                 idle = time.monotonic() - self.last_used
                 try:
                     if (self.stt.state == READY and cfg["idle_unload_seconds"]

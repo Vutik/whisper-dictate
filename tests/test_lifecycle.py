@@ -57,3 +57,20 @@ def test_zero_disables_unloading(cfg, parts):
     time.sleep(0.3)
     assert parts["stt"].unloads == []
     d.shutdown()
+
+
+def test_idle_watcher_leaves_a_remote_recogniser_alone(cfg, parts):
+    """A backend holding no weights must not be "unloaded" every two seconds.
+
+    It always reports READY and its unload() is a no-op, so the watcher used
+    to fire on every pass and log a release that never happened — dozens of
+    lines a minute, drowning the journal.
+    """
+    cfg["idle_unload_seconds"] = 0.01
+    parts["stt"].holds_weights = False
+    d = Dictator(cfg, **parts)
+    d.ensure_loaded()
+    d.start_background()
+    time.sleep(0.3)
+    assert parts["stt"].unloads == []
+    d.shutdown()

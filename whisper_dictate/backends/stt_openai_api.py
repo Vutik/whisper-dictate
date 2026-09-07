@@ -72,6 +72,7 @@ def build_multipart(fields: dict[str, str], filename: str,
 @register("stt", "openai-api", priority=10)
 class OpenAICompatibleSTT(SpeechToText):
     supports_parking = False
+    holds_weights = False        # nothing local to unload when idle
 
     @classmethod
     def is_available(cls, cfg: dict) -> bool:
