@@ -24,9 +24,16 @@ import wave
 
 import numpy as np
 
+from .. import APP, __version__
 from ..interfaces import READY, SpeechToText, Transcript
 from ..log import log
 from ..registry import register
+
+#: Sent on every request. urllib's default is `Python-urllib/x.y`, and the
+#: CDN in front of Groq answers that with a 403 "error code: 1010" before the
+#: request ever reaches the API — same key and same body go through with any
+#: ordinary agent string.
+USER_AGENT = f"{APP}/{__version__} (+https://github.com/Vutik/whisper-dictate)"
 
 
 def encode_wav(audio: np.ndarray, samplerate: int) -> bytes:
@@ -112,7 +119,9 @@ class OpenAICompatibleSTT(SpeechToText):
         request = urllib.request.Request(
             url, data=body, method="POST",
             headers={"Authorization": f"Bearer {api_key}",
-                     "Content-Type": content_type})
+                     "Content-Type": content_type,
+                     "Accept": "application/json",
+                     "User-Agent": USER_AGENT})
 
         t0 = time.monotonic()
         try:

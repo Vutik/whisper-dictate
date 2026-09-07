@@ -52,6 +52,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.server.seen = {
             "path": self.path,
             "auth": self.headers.get("Authorization"),
+            "ua": self.headers.get("User-Agent"),
             "ctype": self.headers.get("Content-Type", ""),
             "body": body,
         }
@@ -144,3 +145,17 @@ def test_remote_backend_holds_no_state(cfg):
     stt.load()
     stt.unload(deep=True)
     assert stt.state == "ready"          # nothing local to release
+
+
+def test_request_identifies_itself(server, cfg):
+    """urllib's default agent gets the request rejected before it lands.
+
+    Groq sits behind a CDN that answers `Python-urllib/x.y` with a 403 and
+    `error code: 1010` — the same key and body succeed under any ordinary
+    agent string, so the header is load-bearing, not cosmetic.
+    """
+    OpenAICompatibleSTT(cfg).transcribe(np.zeros(16000, dtype=np.float32), 16000)
+
+    agent = server.seen["ua"]
+    assert agent and "urllib" not in agent.lower()
+    assert agent.startswith("whisper-dictate/")
