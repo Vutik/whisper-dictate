@@ -126,15 +126,48 @@ File: `~/.config/whisper-dictate/config.json`.
 
 ### Remote recognition (optional)
 
-A second recogniser talks to any service that copies the OpenAI
-`/audio/transcriptions` API — Groq's free tier, OpenAI, Mistral, or a
-self-hosted `whisper-server`. It holds no VRAM and runs on any hardware, at the
-cost of sending audio off the machine and paying network latency.
+**This is the path to take when the machine has no NVIDIA card.** A second
+recogniser talks to any service that copies the OpenAI `/audio/transcriptions`
+API — Groq's free tier, OpenAI, Mistral, or a self-hosted `whisper-server`. It
+holds no VRAM, downloads no weights and runs on any hardware, including a
+laptop with integrated graphics only. The price is that the audio leaves the
+machine and network latency replaces the local decode.
+
+#### Getting a key
+
+Groq is the free option, and the default the config already points at.
+
+1. Open **console.groq.com** and sign in with Google or GitHub.
+2. Go to **API Keys** → **Create API Key**.
+3. Copy it — it looks like `gsk_…` and is shown exactly once.
+
+No card is asked for; the free tier is rate-limited per minute rather than
+billed. Any other provider works the same way once `remote_base_url` and
+`remote_api_key_env` point at it.
+
+#### Wiring it in
+
+A `systemd --user` service does not read your shell profile, so exporting the
+key in `~/.profile` has no effect on the daemon. Give it an environment file
+and a drop-in instead, and it survives every restart:
 
 ```bash
-export GROQ_API_KEY=...              # put this in ~/.profile to persist
+printf 'GROQ_API_KEY=gsk_…\n' > ~/.config/whisper-dictate/env
+chmod 600 ~/.config/whisper-dictate/env
+
+mkdir -p ~/.config/systemd/user/whisper-dictate.service.d
+printf '[Service]\nEnvironmentFile=-%%h/.config/whisper-dictate/env\n' \
+  > ~/.config/systemd/user/whisper-dictate.service.d/override.conf
+
+systemctl --user daemon-reload
+systemctl --user restart whisper-dictate     # the key is read at process start
 ./dictate set backends.stt openai-api
+./dictate backends                           # expect stt=openai-api
 ```
+
+Order matters: restart first, then switch. Switching earlier leaves the
+running daemon without the key in its environment, the backend reports itself
+unavailable, and the log says `reload: keeping current stt`.
 
 | Key | Default | Notes |
 |---|---|---|
@@ -147,9 +180,9 @@ The local backend keeps a much higher priority, so `auto` never picks the
 remote one by accident — selecting it is always explicit. Back to local:
 `./dictate set backends.stt auto`.
 
-Note that a `systemd --user` service does not read your shell profile; add the
-key with `systemctl --user set-environment GROQ_API_KEY=...` or an override
-file if you want it to survive a restart.
+If every request comes back as `403 … error code: 1010`, the key is fine and
+the CDN in front of the provider is refusing the client: that is what a
+missing or default `User-Agent` earns. This backend sends its own.
 
 ### Serving recognition to other machines
 
@@ -372,7 +405,7 @@ pip install numpy pytest
 pytest
 ```
 
-85 tests, ~9 seconds. They need **no GPU, microphone, display server or
+118 tests, ~9 seconds. They need **no GPU, microphone, display server or
 network**: the interfaces let fakes stand in for every platform backend, so
 the state machine is exercised directly.
 
