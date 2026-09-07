@@ -60,6 +60,10 @@ DEFAULTS = {
     "input_device": None,             # None = system default source
     "max_seconds": 300,
     "min_seconds": 0.35,
+    # People press the hotkey as they finish the last word, so the closing
+    # syllable is still in the air when the stream would otherwise shut. Keep
+    # capturing this long past the request. 0 restores the abrupt cut.
+    "tail_seconds": 0.25,
 
     # --- hotkey ---
     "hotkey": "ctrl+alt+space",

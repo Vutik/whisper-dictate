@@ -78,6 +78,14 @@ class SoundDeviceCapture(AudioCapture):
 
     def stop(self) -> np.ndarray:
         if self._stream is not None:
+            # Hold the stream open a moment longer. The hotkey is pressed as
+            # the last word ends, and PortAudio hands over whole blocks: what
+            # is still in flight at that instant reaches no callback and is
+            # simply lost, taking the tail of the word with it.
+            import time
+            tail = float(self.cfg.get("tail_seconds") or 0)
+            if tail > 0:
+                time.sleep(tail)
             self._stream.stop()
             self._stream.close()
             self._stream = None

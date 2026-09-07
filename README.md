@@ -247,6 +247,14 @@ after 15 minutes.
 | `input_device` | `null` | system default microphone; accepts a name or index |
 | `max_seconds` | `300` | recording stops by itself |
 | `min_seconds` | `0.35` | anything shorter counts as a stray keypress |
+| `tail_seconds` | `0.25` | keep capturing this long after the hotkey; `0` cuts immediately |
+
+The tail exists because the hotkey is pressed *as* the last word ends, and
+PortAudio hands over whole blocks: whatever is still in flight at that instant
+reaches no callback. Measured on the developer's machine, stopping without a
+tail keeps 35 ms past the keypress; with the default it keeps 291 ms. If the
+last word of a dictation is sometimes clipped, raise this before suspecting
+the recogniser.
 
 ### Hotkey
 
@@ -405,7 +413,7 @@ pip install numpy pytest
 pytest
 ```
 
-118 tests, ~9 seconds. They need **no GPU, microphone, display server or
+123 tests, ~9 seconds. They need **no GPU, microphone, display server or
 network**: the interfaces let fakes stand in for every platform backend, so
 the state machine is exercised directly.
 
@@ -419,6 +427,7 @@ the state machine is exercised directly.
 | `test_remote_stt.py` | WAV encoding, multipart shape and error handling, against a throwaway HTTP server |
 | `test_injectors.py` | paste-vs-type routing and terminal detection, with subprocess replaced |
 | `test_hotkey_spec.py` | hotkey parsing and its error reporting |
+| `test_capture.py` | the trailing capture window, with PortAudio replaced by a fake |
 | `test_diagnose.py` | classifying a captured buffer, so an empty result names its cause |
 
 CI runs them on Python 3.9–3.13 (`.github/workflows/tests.yml`).
