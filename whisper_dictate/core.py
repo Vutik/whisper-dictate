@@ -11,6 +11,7 @@ import time
 
 import numpy as np
 
+from . import diagnose
 from .interfaces import (AudioCapture, HotkeyBinder, Notifier, PARKED, READY,
                          SoundPlayer, SpeechToText, TextInjector, TextProcessor,
                          UNLOADED)
@@ -219,12 +220,37 @@ class Dictator(ModelHost):
 
     # -- transcription -----------------------------------------------------
 
+    def _give_up(self, headline: str, detail: str, *, seconds: float) -> None:
+        """Report a dictation that produced nothing, and say why.
+
+        Every caller has already worked out the cause; this puts it in both
+        places the user might look — the journal and the screen.
+        """
+        log(f"{headline[0].lower()}{headline[1:]}: {detail}")
+        self.sound.play("error")
+        self.notifier.show(f"✖ {headline}", detail, int(seconds * 1000),
+                           close_after=seconds)
+
     def _process(self, audio: np.ndarray):
         cfg = self.cfg
+        # Measured before anything else: when the result turns out empty,
+        # the waveform is the only witness to why.
+        level = diagnose.measure(audio)
+        silence = diagnose.explain_silence(level)
         try:
             samplerate = self.samplerate
-            duration = len(audio) / samplerate
+            duration = level.samples / samplerate
+
+            # A dead device means the recogniser has nothing to do: skip it
+            # rather than spend the GPU on zeros and risk Whisper inventing
+            # subtitles over them. It also keeps this out of "too short",
+            # which would blame the user for a fumbled hotkey.
+            if diagnose.is_dead(level):
+                return self._give_up(*silence, seconds=8.0)
+
             if duration < cfg["min_seconds"]:
+                log(f"too short: {duration:.2f} s captured, min_seconds is "
+                    f"{cfg['min_seconds']} ({level})")
                 self.notifier.show("✖ Too short", f"{duration:.1f} s",
                                    1500, close_after=1.5)
                 return
@@ -238,17 +264,36 @@ class Dictator(ModelHost):
 
             text = self.postprocessor.process(transcript)
             if not text:
-                self.sound.play("error")
-                self.notifier.show("✖ Nothing recognised", "", 2000,
-                                   close_after=2.0)
-                return
+                # No words out is the symptom shared by every failure above
+                # the microphone; the level says which one this was.
+                return self._give_up(*(silence or (
+                    "Nothing recognised",
+                    f"{duration:.1f} s of audible input ({level}) decoded to "
+                    f"no words — raw transcript was "
+                    f"{transcript.text.strip()!r}")), seconds=6.0)
 
             log(f"[{transcript.language} {transcript.language_probability:.2f}] "
-                f"{duration:.1f}s audio → {elapsed:.1f}s decode: {text}")
+                f"{duration:.1f}s audio → {elapsed:.1f}s decode ({level}): "
+                f"{text}")
 
             if cfg["append_space"]:
                 text += " "
-            self.injector.insert(text)
+
+            # Injection is a separate failure domain: the transcript is
+            # already good, only delivery broke. Reporting it as a
+            # transcription failure sends the next debugging session to the
+            # wrong end of the pipeline.
+            try:
+                self.injector.insert(text)
+            except Exception as exc:                          # noqa: BLE001
+                log(f"insert failed via {self.injector.backend_name}: {exc}")
+                self.sound.play("error")
+                self.notifier.show(
+                    "⚠️ Could not insert text",
+                    f"{exc} — the transcript is in the daemon log", 8000,
+                    close_after=8.0)
+                return
+
             self.sound.play("done")
 
             preview = text.strip()
@@ -257,8 +302,9 @@ class Dictator(ModelHost):
             self.notifier.show(
                 f"✓ {transcript.language} · {elapsed:.1f} s", preview,
                 2500, close_after=2.5)
-        except Exception as exc:
-            log(f"transcription failed: {exc}")
+        except Exception as exc:                              # noqa: BLE001
+            log(f"transcription failed via {self.stt.backend_name}: "
+                f"{exc.__class__.__name__}: {exc}")
             self.sound.play("error")
             self.notifier.show("⚠️ Transcription failed", str(exc), 6000,
                                close_after=6.0)

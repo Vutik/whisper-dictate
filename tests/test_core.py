@@ -142,3 +142,81 @@ def test_concurrent_toggles_do_not_double_start(dictator, parts):
     assert sorted(results) == ["recording", "transcribing"]
     assert wait_idle(dictator)
     assert len(parts["injector"].inserted) == 1
+
+
+# -- what the daemon says when a dictation produces nothing -----------------
+
+def bodies(notifier):
+    return " ".join(f"{t} {b}" for t, b in notifier.shown)
+
+
+def test_dead_capture_device_is_named_not_guessed(cfg, parts):
+    """A buffer of exact zeros is a broken device, and must say so."""
+    parts["audio"].amplitude = 0
+    d = Dictator(cfg, **parts)
+    d.ensure_loaded()
+    d.start(); d.stop()
+    assert wait_idle(d)
+
+    assert parts["injector"].inserted == []
+    assert "error" in parts["sound"].played
+    said = bodies(parts["notifier"])
+    assert "Microphone is silent" in said
+    assert "wireplumber" in said            # the fix, not just the symptom
+    assert parts["stt"].calls == []         # no GPU spent on a buffer of zeros
+    d.shutdown()
+
+
+def test_stream_with_no_blocks_is_not_called_too_short(cfg, parts):
+    """Zero samples means the device vanished, not a fumbled hotkey."""
+    parts["audio"].no_blocks = True
+    d = Dictator(cfg, **parts)
+    d.ensure_loaded()
+    d.start(); d.stop()
+    assert wait_idle(d)
+
+    said = bodies(parts["notifier"])
+    assert "Microphone produced no audio" in said
+    assert "Too short" not in said
+    assert parts["stt"].calls == []         # never reached the recogniser
+    d.shutdown()
+
+
+def test_muted_microphone_is_distinguished_from_a_dead_one(cfg, parts):
+    parts["audio"].amplitude = 1e-4
+    parts["stt"].text = ""
+    d = Dictator(cfg, **parts)
+    d.ensure_loaded()
+    d.start(); d.stop()
+    assert wait_idle(d)
+
+    said = bodies(parts["notifier"])
+    assert "Microphone almost silent" in said
+    assert "muted" in said
+    d.shutdown()
+
+
+def test_empty_result_on_audible_input_quotes_the_raw_transcript(dictator, parts):
+    parts["stt"].text = "   "
+    dictator.start(); dictator.stop()
+    assert wait_idle(dictator)
+
+    said = bodies(parts["notifier"])
+    assert "Nothing recognised" in said
+    assert "Microphone" not in said         # the mic was fine; do not blame it
+    assert "peak" in said                   # the level, for the next report
+
+
+def test_insert_failure_is_not_reported_as_a_transcription_failure(cfg, parts):
+    parts["injector"].fail_with = RuntimeError("xdotool exited 1")
+    d = Dictator(cfg, **parts)
+    d.ensure_loaded()
+    d.start(); d.stop()
+    assert wait_idle(d)
+
+    said = bodies(parts["notifier"])
+    assert "Could not insert text" in said
+    assert "xdotool exited 1" in said
+    assert "Transcription failed" not in said
+    assert d.state == Dictator.IDLE
+    d.shutdown()

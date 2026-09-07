@@ -63,6 +63,11 @@ class FakeAudio(AudioCapture):
         self.seconds = seconds
         self.started = 0
         self.fail_on_start = None
+        # A real microphone always carries a noise floor, so the default
+        # fake carries one too: a buffer of exact zeros is its own fault
+        # condition and must not be what every test feeds the core.
+        self.amplitude = 0.25
+        self.no_blocks = False
 
     @property
     def samplerate(self):
@@ -74,8 +79,13 @@ class FakeAudio(AudioCapture):
         self.started += 1
 
     def stop(self):
+        if self.no_blocks:
+            return np.zeros(0, dtype=np.float32)
         n = int(self.seconds * self.samplerate)
-        return np.zeros(n, dtype=np.float32)
+        if not self.amplitude:
+            return np.zeros(n, dtype=np.float32)
+        rng = np.random.default_rng(0)
+        return rng.uniform(-self.amplitude, self.amplitude, n).astype(np.float32)
 
     @property
     def elapsed(self):
@@ -88,8 +98,11 @@ class FakeInjector(TextInjector):
     def __init__(self, cfg):
         super().__init__(cfg)
         self.inserted = []
+        self.fail_with = None
 
     def insert(self, text):
+        if self.fail_with:
+            raise self.fail_with
         self.inserted.append(text)
 
 
